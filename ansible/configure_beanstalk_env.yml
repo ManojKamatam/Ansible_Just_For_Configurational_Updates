@@ -1,0 +1,88 @@
+---
+- name: Configure Elastic Beanstalk Environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+
+    - name: Wait for Environment to be Ready Before Configuration
+      command: >
+        aws elasticbeanstalk describe-environments --application-name "{{ application_name }}"
+        --environment-names "{{ environment_name }}" --query 'Environments[0].Status' --output text --region "{{ region }}"
+      register: env_status
+      until: env_status.stdout == "Ready"
+      retries: 30
+      delay: 60
+
+    - name: Set Rolling Deployments for Application
+      command: >
+        aws elasticbeanstalk update-environment
+        --application-name "{{ application_name }}"
+        --environment-name "{{ environment_name }}"
+        --option-settings Namespace=aws:elasticbeanstalk:command,OptionName=DeploymentPolicy,Value=Rolling
+        --region "{{ region }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+    - name: Wait for Environment to be Ready After Rolling Deployment
+      command: >
+        aws elasticbeanstalk describe-environments --application-name "{{ application_name }}"
+        --environment-names "{{ environment_name }}" --query 'Environments[0].Status' --output text --region "{{ region }}"
+      register: env_status
+      until: env_status.stdout == "Ready"
+      retries: 30
+      delay: 60
+
+    - name: Set Immutable Deployments for Configuration Updates
+      command: >
+        aws elasticbeanstalk update-environment
+        --application-name "{{ application_name }}"
+        --environment-name "{{ environment_name }}"
+        --option-settings Namespace=aws:elasticbeanstalk:command,OptionName=DeploymentPolicy,Value=Immutable
+        --region "{{ region }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+    - name: Wait for Environment to be Ready Before Changing Instance Type
+      command: >
+        aws elasticbeanstalk describe-environments --application-name "{{ application_name }}"
+        --environment-names "{{ environment_name }}" --query 'Environments[0].Status' --output text --region "{{ region }}"
+      register: env_status
+      until: env_status.stdout == "Ready"
+      retries: 30
+      delay: 60
+
+    - name: Change Instance Type using AWS CLI
+      command: >
+        aws elasticbeanstalk update-environment
+        --application-name "{{ application_name }}"
+        --environment-name "{{ environment_name }}"
+        --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=InstanceType,Value=t3.medium
+        --region "{{ region }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+    - name: Wait for Environment to be Ready After Instance Type Change
+      command: >
+        aws elasticbeanstalk describe-environments --application-name "{{ application_name }}"
+        --environment-names "{{ environment_name }}" --query 'Environments[0].Status' --output text --region "{{ region }}"
+      register: env_status
+      until: env_status.stdout == "Ready"
+      retries: 30
+      delay: 60
+
+    - name: Change EBS Volume Type from gp2 to gp3
+      command: >
+        aws ec2 describe-volumes --filters "Name=tag:elasticbeanstalk:environment-name,Values={{ environment_name }}" --query "Volumes[*].VolumeId" --output text --region "{{ region }}"
+      register: volumes_info
+
+    - name: Modify EBS volume to gp3 using AWS CLI
+      command: >
+        aws ec2 modify-volume --volume-id {{ item }} --volume-type gp3 --region "{{ region }}"
+      loop: "{{ volumes_info.stdout_lines }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
