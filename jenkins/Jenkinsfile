@@ -32,7 +32,7 @@ pipeline {
 
         stage('Checkout Repository') {
             steps {
-                git url: 'https://github.com/ManojKamatam/Ansible_Integration_for_Existing_Env_Changes.git', branch: 'main'
+                git url: 'https://github.com/ManojKamatam/Ansible_Just_For_Configurational_Updates.git', branch: 'main'
             }
         }
 
